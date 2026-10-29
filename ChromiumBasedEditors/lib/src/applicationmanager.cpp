@@ -58,8 +58,18 @@ CAscApplicationManager* CLinuxData::app_manager = NULL;
 
 void posix_death_signal(int signum)
 {
-	// release all subprocesses
-	CLinuxData::Close();
+	// A second signal (SIGTERM/SIGSEGV) can be delivered while the graceful
+	// close initiated by the first one is still running. Re-entering
+	// CAscApplicationManager::CloseApplication() at that point releases
+	// objects already destroyed by the first pass (see
+	// NSResourceHandlerFileAsyncManager::Destroy). Make the handler one-shot.
+	static bool bClosing = false;
+	if (!bClosing)
+	{
+		bClosing = true;
+		// release all subprocesses
+		CLinuxData::Close();
+	}
 	signal(signum, SIG_DFL);
 	exit(3);
 }
@@ -892,6 +902,15 @@ bool CAscApplicationManager::GetDebugInfoSupport()
 
 void CAscApplicationManager::CloseApplication()
 {
+	// Can be re-entered: the Qt shutdown path calls this after the message
+	// loop exits, and a SIGTERM/SIGSEGV arriving in between enters it again
+	// through posix_death_signal(). The second pass would release objects
+	// already destroyed by the first one, so close only once.
+	static bool bClosing = false;
+	if (bClosing)
+		return;
+	bClosing = true;
+
 	m_pInternal->StopNativePlugins();
 	NSResourceHandlerFileAsyncManager::Destroy();
 	this->DestroyCefView(-1);

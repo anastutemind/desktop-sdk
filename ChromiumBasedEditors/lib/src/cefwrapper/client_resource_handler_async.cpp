@@ -155,6 +155,11 @@ void NSResourceHandlerFileAsyncManager::Create(CResourceHandlerFileAsyncCallback
 
 void NSResourceHandlerFileAsyncManager::Destroy()
 {
+    // The singleton may already be released by a previous CloseApplication()
+    // pass; do not touch it again (this crashed on re-entry).
+    if (!g_manager)
+        return;
+
     g_manager->Destroy();
     delete g_manager;
     g_manager = NULL;
